@@ -127,4 +127,4 @@ jobs:
                 });
                 core.info('Posted questionnaire comment.');
               }
-            })(...);
+            })({ github, context, core });
