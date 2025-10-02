@@ -268,7 +268,6 @@ jobs:
               const parSection = parSectionMatch ? parSectionMatch[0] : '';
               if (!parSectionMatch) {
                 core.info('No PAR Approval Checklist found inside questionnaires.');
-                return;
               }
 
               // Find Bypass section within questionnaire block
