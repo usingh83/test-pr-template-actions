@@ -308,6 +308,8 @@ jobs:
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('PAR items selected — removed Bypass questionnaire until PAR boxes are cleared.');
+                    // ensure the PR check remains pending while PAR boxes are selected
+                    await setPrCheck('pending');
                     return;
                   }
                 }
@@ -319,6 +321,9 @@ jobs:
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('Bypass item(s) selected — removed PAR questionnaire until Bypass boxes are cleared.');
+                    // ensure the PR check is success if bypass meets criteria was handled later;
+                    // keep check pending here because selection state may still require action
+                    await setPrCheck('pending');
                     return;
                   }
                 }
@@ -330,6 +335,8 @@ jobs:
                   if (restored !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: restored });
                     core.info('No questionnaire options selected — restored both PAR and Bypass questionnaires.');
+                    // When both are unselected the gating check should go to pending again
+                    await setPrCheck('pending');
                     return;
                   }
                 }
