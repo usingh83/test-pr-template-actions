@@ -21,7 +21,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            async ({ github, context, core }) => {
+            (async ({ github, context, core }) => {
               const owner = context.repo.owner;
               const repo = context.repo.repo;
 
@@ -199,4 +199,4 @@ jobs:
               }
 
               core.info(`PAR checklist not fully checked (${checked}/${total}). No maintainer update.`);
-            }
+            })({ github, context, core });
