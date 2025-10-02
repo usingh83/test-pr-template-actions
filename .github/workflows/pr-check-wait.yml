@@ -1,0 +1,45 @@
+name: PR Bot Injection Check
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  wait-for-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for maintainer fields injected by bot
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('No pull_request in context.');
+              return;
+            }
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = pr.number;
+
+            const timeoutMs = 120000; // 2 minutes
+            const intervalMs = 5000;
+            const deadline = Date.now() + timeoutMs;
+
+            while (Date.now() < deadline) {
+              const { data: prData } = await github.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber
+              });
+              const body = prData.body || '';
+              if (body.includes('MAINTAINER-FIELDS-START')) {
+                core.info('Maintainer fields detected. Passing check.');
+                return;
+              }
+              core.info('Maintainer fields not present yet; sleeping...');
+              await new Promise(res => setTimeout(res, intervalMs));
+            }
+
+            core.setFailed('Timed out waiting for bot to update PR description with maintainer fields.');
