@@ -96,9 +96,52 @@ jobs:
               });
               let body = prData.body || '';
 
+              // Precompute questionnaire block regex for reuse
+              const qStartEsc = esc(questionnairesStart);
+              const qEndEsc = esc(questionnairesEnd);
+              const qBlockRegex = new RegExp(`${qStartEsc}[\\s\\S]*?${qEndEsc}\\n?`, 'i');
+
+              // If this is a new commit (synchronize), reset PAR approval and remove maintainer block
+              if (context.payload.action === 'synchronize') {
+                let newBody = body;
+
+                // Remove maintainer block if present
+                const mStartEsc = esc(maintainerStart);
+                const mEndEsc = esc(maintainerEnd);
+                const maintRegex = new RegExp(`${mStartEsc}[\\s\\S]*?${mEndEsc}\\n?`, 'g');
+                newBody = newBody.replace(maintRegex, '');
+
+                // Reset checkboxes in PAR Approval Checklist to unchecked if questionnaires block present
+                const qMatch = newBody.match(qBlockRegex);
+                if (qMatch) {
+                  let qBlock = qMatch[0];
+                  const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
+                  if (parSectionMatch) {
+                    const parSection = parSectionMatch[0];
+                    const parReset = parSection.replace(/- \[[ xX]\]/g, '- [ ]');
+                    qBlock = qBlock.replace(parSection, parReset);
+                    newBody = newBody.replace(qBlockRegex, qBlock);
+                  }
+                }
+
+                // Update PR body only if changes occurred
+                if (newBody !== body) {
+                  await github.rest.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    body: newBody
+                  });
+                  core.info('New commit detected: removed maintainer block and reset PAR checkboxes.');
+                } else {
+                  core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
+                }
+                return;
+              }
+
               // Ensure questionnaires exist (inject on opened or if missing)
               if (!body.includes(questionnairesStart)) {
-                if (context.payload.action === 'opened' || context.payload.action === 'reopened' || context.payload.action === 'synchronize' || context.payload.action === 'edited') {
+                if (context.payload.action === 'opened' || context.payload.action === 'reopened' || context.payload.action === 'edited') {
                   if (body.includes(placeholder)) {
                     body = body.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
                   } else {
@@ -127,9 +170,6 @@ jobs:
               let refreshedBody = refreshed.body || '';
 
               // Extract questionnaire block (if any)
-              const qStartEsc = esc(questionnairesStart);
-              const qEndEsc = esc(questionnairesEnd);
-              const qBlockRegex = new RegExp(`${qStartEsc}[\\s\\S]*?${qEndEsc}\\n?`, 'i');
               const qBlockMatch = refreshedBody.match(qBlockRegex);
               if (!qBlockMatch) {
                 core.info('No questionnaire block present; nothing to evaluate.');
@@ -177,11 +217,11 @@ jobs:
                 refreshedBody = refreshedBody.replace(qBlockRegex, '');
 
                 // Replace or insert maintainer block
-                const mStartEsc = esc(maintainerStart);
-                const mEndEsc = esc(maintainerEnd);
-                const maintRegex = new RegExp(`${mStartEsc}[\\s\\S]*?${mEndEsc}`, 'g');
-                if (maintRegex.test(refreshedBody)) {
-                  refreshedBody = refreshedBody.replace(maintRegex, maintainerBlock.trim());
+                const mStartEsc2 = esc(maintainerStart);
+                const mEndEsc2 = esc(maintainerEnd);
+                const maintRegex2 = new RegExp(`${mStartEsc2}[\\s\\S]*?${mEndEsc2}`, 'g');
+                if (maintRegex2.test(refreshedBody)) {
+                  refreshedBody = refreshedBody.replace(maintRegex2, maintainerBlock.trim());
                 } else if (refreshedBody.includes(placeholder)) {
                   refreshedBody = refreshedBody.replace(placeholder, `${placeholder}\n\n${maintainerBlock}`);
                 } else {
