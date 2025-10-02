@@ -216,6 +216,7 @@ jobs:
                 } else {
                   core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
                 }
+                await setPrCheck('pending');
                 return;
               }
               await setPrCheck('pending');
