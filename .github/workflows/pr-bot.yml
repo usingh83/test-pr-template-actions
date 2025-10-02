@@ -76,8 +76,7 @@ jobs:
               ].join('\n');
 
               // Prepare maintainer-only fields to inject
-              const maintainerFields = `
-                ${markerStart}
+              const maintainerFields = `${markerStart}
                 **Maintainer-only fields (added by bot)**
 
                 - PAR required: _\\<yes/no\\>_
