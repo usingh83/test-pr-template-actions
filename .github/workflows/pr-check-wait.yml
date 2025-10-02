@@ -26,9 +26,8 @@ jobs:
 
               const timeoutMs = 120000; // 2 minutes
               const intervalMs = 5000;
-              const deadline = Date.now() + timeoutMs;
 
-              while (Date.now() < deadline) {
+              while (true) {
                 const { data: prData } = await github.pulls.get({
                   owner,
                   repo,
