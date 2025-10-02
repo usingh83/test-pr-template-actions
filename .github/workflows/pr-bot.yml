@@ -17,28 +17,31 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Update PR body and post questionnaires
+      - name: Inject and maintain questionnaires / update maintainer fields
         uses: actions/github-script@v6
         with:
           script: |
-            (async ({ github, context, core }) => {
+            async ({ github, context, core }) => {
               const owner = context.repo.owner;
               const repo = context.repo.repo;
-              const pr = context.payload.pull_request;
-              if (!pr) {
-                core.info('No pull_request in context; exiting.');
+
+              // Resolve PR number for PR events
+              const prPayload = context.payload.pull_request || (context.payload.issue && context.payload.issue.pull_request && context.payload.issue);
+              if (!prPayload || !prPayload.number) {
+                core.info('No pull request in context; skipping.');
                 return;
               }
-              const prNumber = pr.number;
+              const prNumber = prPayload.number;
+              const actor = context.actor;
 
-              // Read approvers file (if present)
+              // Optional approvers list
               let approvers = [];
               try {
                 const resp = await github.rest.repos.getContent({
                   owner,
                   repo,
                   path: '.github/PAR_APPROVERS',
-                  ref: context.payload.pull_request.base.ref
+                  ref: prPayload.base && prPayload.base.ref
                 });
                 const content = Buffer.from(resp.data.content, 'base64').toString();
                 approvers = content.split('\n').map(s => s.trim()).filter(Boolean);
@@ -46,9 +49,14 @@ jobs:
                 core.info('.github/PAR_APPROVERS not found or unreadable; treating as empty list.');
               }
 
-              const markerStart = '<!-- MAINTAINER-FIELDS-START -->';
-              const markerEnd = '<!-- MAINTAINER-FIELDS-END -->';
+              // Markers
+              const maintainerStart = '<!-- MAINTAINER-FIELDS-START -->';
+              const maintainerEnd = '<!-- MAINTAINER-FIELDS-END -->';
+              const questionnairesStart = '<!-- QUESTIONNAIRES-START -->';
+              const questionnairesEnd = '<!-- QUESTIONNAIRES-END -->';
               const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
+
+              // Questionnaire content (checkbox style)
               const parQuestionnaire = [
                 '### PAR Approval Checklist',
                 '- [ ] RMC attestation',
@@ -65,51 +73,130 @@ jobs:
                 '- [ ] Business requirement',
                 ''
               ].join('\n');
-            
+
               const questionnaireBlock = [
+                questionnairesStart,
                 '**Automated questionnaires (added by bot)**',
-                '---',
+                '',
                 parQuestionnaire,
                 '---',
                 bypassQuestionnaire,
-                '',
+                questionnairesEnd,
+                ''
               ].join('\n');
 
-              // Prepare maintainer-only fields to inject
-              const maintainerFields = `${markerStart}
-                **Maintainer-only fields (added by bot)**
+              // Helper: escape regex special chars
+              const esc = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-                - PAR required: _\\<yes/no\\>_
-                - Approver: _\\<@username\\>_
-                - Approval date: _\\<YYYY-MM-DD\\>_
+              // Fetch latest PR body
+              const { data: prData } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber
+              });
+              let body = prData.body || '';
 
-                _Please do not edit the above fields; they are managed by the bot._
-            ${questionnaireBlock}${markerEnd}
-              `;
-              // Update PR body if placeholder exists and marker not present
-              const body = pr.body || '';
-              if (!body.includes(markerStart)) {
-                if (body.includes(placeholder)) {
-                  const newBody = body.replace(placeholder, `${placeholder}\n\n${maintainerFields}`);
+              // Ensure questionnaires exist (inject on opened or if missing)
+              if (!body.includes(questionnairesStart)) {
+                if (context.payload.action === 'opened' || context.payload.action === 'reopened' || context.payload.action === 'synchronize' || context.payload.action === 'edited') {
+                  if (body.includes(placeholder)) {
+                    body = body.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
+                  } else {
+                    body = `${body}\n\n${questionnaireBlock}`;
+                  }
                   await github.rest.pulls.update({
                     owner,
                     repo,
                     pull_number: prNumber,
-                    body: newBody
-                   });
-                  core.info('PR body updated with maintainer-only fields.');
-                } else {
-                  // If placeholder missing but marker also missing, append at end (idempotent)
-                  const newBody = `${body}\n\n${maintainerFields}`;
-                  await github.rest.pulls.update({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    body: newBody
+                    body
                   });
-                  core.info('PR body appended with maintainer-only fields.');
+                  core.info('Injected questionnaires into PR body.');
+                } else {
+                  core.info('Questionnaires missing but not an insertion-trigger event; skipping injection.');
                 }
               } else {
-                core.info('Maintainer fields already present; skipping body update.');
+                core.info('Questionnaires already present.');
               }
-            })({ github, context, core });
+
+              // Refresh PR body after possible injection
+              const { data: refreshed } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber
+              });
+              let refreshedBody = refreshed.body || '';
+
+              // Extract questionnaire block (if any)
+              const qStartEsc = esc(questionnairesStart);
+              const qEndEsc = esc(questionnairesEnd);
+              const qBlockRegex = new RegExp(`${qStartEsc}[\\s\\S]*?${qEndEsc}\\n?`, 'i');
+              const qBlockMatch = refreshedBody.match(qBlockRegex);
+              if (!qBlockMatch) {
+                core.info('No questionnaire block present; nothing to evaluate.');
+                return;
+              }
+              const qBlock = qBlockMatch[0];
+
+              // Find PAR Approval Checklist section within questionnaire block
+              const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
+              if (!parSectionMatch) {
+                core.info('No PAR Approval Checklist found inside questionnaires.');
+                return;
+              }
+              const parSection = parSectionMatch[0];
+
+              // Count checkboxes
+              const checkboxRegex = /- \[([ xX])\]\s.*$/gm;
+              let total = 0;
+              let checked = 0;
+              let m;
+              while ((m = checkboxRegex.exec(parSection)) !== null) {
+                total += 1;
+                if (m[1].trim().toLowerCase() === 'x') checked += 1;
+              }
+
+              // If all checked, update maintainer fields and remove questionnaires
+              if (total > 0 && checked === total) {
+                const approvalDate = new Date().toISOString().split('T')[0];
+                const approverDisplay = approvers.includes(actor) ? `@${actor}` : `@${actor}`;
+
+                const maintainerBlock = [
+                  maintainerStart,
+                  '**Maintainer-only fields (added by bot)**',
+                  '',
+                  '- PAR required: _yes_',
+                  `- Approver: _${approverDisplay}_`,
+                  `- Approval date: _${approvalDate}_`,
+                  '',
+                  '_Please do not edit the above fields; they are managed by the bot._',
+                  maintainerEnd,
+                  ''
+                ].join('\n');
+
+                // Remove questionnaire block entirely
+                refreshedBody = refreshedBody.replace(qBlockRegex, '');
+
+                // Replace or insert maintainer block
+                const mStartEsc = esc(maintainerStart);
+                const mEndEsc = esc(maintainerEnd);
+                const maintRegex = new RegExp(`${mStartEsc}[\\s\\S]*?${mEndEsc}`, 'g');
+                if (maintRegex.test(refreshedBody)) {
+                  refreshedBody = refreshedBody.replace(maintRegex, maintainerBlock.trim());
+                } else if (refreshedBody.includes(placeholder)) {
+                  refreshedBody = refreshedBody.replace(placeholder, `${placeholder}\n\n${maintainerBlock}`);
+                } else {
+                  refreshedBody = `${refreshedBody}\n\n${maintainerBlock}`;
+                }
+
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  body: refreshedBody
+                });
+                core.info('All PAR checklist items checked — maintainer fields updated and questionnaires removed.');
+                return;
+              }
+
+              core.info(`PAR checklist not fully checked (${checked}/${total}). No maintainer update.`);
+            }
