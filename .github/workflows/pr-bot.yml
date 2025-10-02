@@ -81,6 +81,7 @@ jobs:
                 parQuestionnaire,
                 '---',
                 bypassQuestionnaire,
+                '**Unselect all options to see both PAR and Bypass Questionnaire**',
                 questionnairesEnd,
                 ''
               ].join('\n');
