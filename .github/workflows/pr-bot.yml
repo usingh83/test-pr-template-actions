@@ -24,8 +24,8 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const pr = context.payload.pull_request;
-            if (!pr) {
-              core.info('No pull_request in context; exiting.');
+            if (!pr || !pr.body || !pr.number || !pr.user) {
+              core.info('Incomplete pull_request context; exiting.');
               return;
             }
             const prNumber = pr.number;
