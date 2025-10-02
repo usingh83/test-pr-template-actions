@@ -295,6 +295,12 @@ jobs:
                   if (m[1].trim().toLowerCase() === 'x') bypassChecked += 1;
                 }
               }
+              const satisfied = (total > 0 && checked === total) || (bypassChecked > 0);
+              if (satisfied) {
+                await setPrCheck('success');
+              } else {
+                await setPrCheck('pending');
+              }
 
               // Enforce section-level mutual exclusion based on partial selections:
               // - If any PAR checkbox is selected, remove the Bypass section until all PAR boxes are unselected.
@@ -339,12 +345,6 @@ jobs:
                 await setPrCheck('pending');
                 core.info('No checklist items selected; ensured both PAR and Bypass sections are present.');
                 return;
-              }
-              const satisfied = (total > 0 && checked === total) || (bypassChecked > 0);
-              if (satisfied) {
-                await setPrCheck('success');
-              } else {
-                await setPrCheck('pending');
               }
 
               // If all PAR checkboxes are checked, update maintainer fields and remove questionnaires
