@@ -111,40 +111,44 @@ jobs:
                 const maintRegex = new RegExp(`${mStartEsc}[\\s\\S]*?${mEndEsc}\\n?`, 'g');
                 newBody = newBody.replace(maintRegex, '');
 
-                // Reset checkboxes in PAR Approval Checklist if questionnaires block present
+                // Try to find existing questionnaire block and reset PAR checkboxes
                 const qMatch = newBody.match(qBlockRegex);
                 if (qMatch) {
                   let qBlock = qMatch[0];
-                  const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\\s\\S]*?(?=(\\n---|\\n\\n|$))/i);
+                  // Use the same working regex to find the PAR section
+                  const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
                   if (parSectionMatch) {
                     const parSection = parSectionMatch[0];
-                    const parReset = parSection.replace(/- \\[[ xX]\\]/g, '- [ ]');
+                    // Reset any checked box to unchecked
+                    const parReset = parSection.replace(/- \[[ xX]\]/g, '- [ ]');
                     qBlock = qBlock.replace(parSection, parReset);
                     newBody = newBody.replace(qBlockRegex, qBlock);
                   }
                 } else {
-                  // If questionnaires were removed (e.g. after approval), re-insert them so reviewers/author can re-fill
-                  if (body.includes(placeholder)) {
-                    newBody = body.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
+                  // If questionnaires were previously removed (e.g. after approval), re-insert them into the updated body
+                  if (!newBody.includes(questionnairesStart)) {
+                    if (newBody.includes(placeholder)) {
+                      newBody = newBody.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
                   } else {
-                    newBody = `${body}\n\n${questionnaireBlock}`;
+                    newBody = `${newBody}\n\n${questionnaireBlock}`;
                   }
                 }
-
-                // Update only when something changed
-                if (newBody !== body) {
-                  await github.rest.pulls.update({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    body: newBody
-                  });
-                  core.info('New commit detected: removed maintainer block, reset PAR checkboxes and ensured questionnaires are present.');
-                } else {
-                  core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
-                }
-                return;
               }
+
+              // Update only when something changed
+              if (newBody !== body) {
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  body: newBody
+                });
+                core.info('New commit detected: removed maintainer block, reset PAR checkboxes and ensured questionnaires are present.');
+              } else {
+                core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
+              }
+              return;
+            }
 
               // Ensure questionnaires exist (inject on opened or if missing)
               if (!body.includes(questionnairesStart)) {
