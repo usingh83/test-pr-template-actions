@@ -151,7 +151,7 @@ jobs:
             }
 
               // Ensure questionnaires exist (inject on opened or if missing)
-              if (!body.includes(questionnairesStart)) {
+              if (!body.includes(questionnairesStart) && !body.includes(maintainerStart)) {
                 if (context.payload.action === 'opened' || context.payload.action === 'reopened' || context.payload.action === 'edited') {
                   if (body.includes(placeholder)) {
                     body = body.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
@@ -164,12 +164,17 @@ jobs:
                     pull_number: prNumber,
                     body
                   });
-                  core.info('Injected questionnaires into PR body.');
+                  core.info('Injected questionnaires into PR body (no maintainer block present).');
                 } else {
                   core.info('Questionnaires missing but not an insertion-trigger event; skipping injection.');
                 }
+              } else if (body.includes(questionnairesStart) && body.includes(maintainerStart)) {
+                // Safety: if both exist, prefer maintainer block and remove questionnaires
+                body = body.replace(qBlockRegex, '');
+                await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body });
+                core.info('Both maintainer and questionnaires were present; removed questionnaires to enforce mutual exclusion.');
               } else {
-                core.info('Questionnaires already present.');
+                core.info('Questionnaires already present or maintainer block present; skipping insertion.');
               }
 
               // Refresh PR body after possible injection

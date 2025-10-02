@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Update PR body and post questionnaires
+      - name: Post questionnaires as comments (do not inject maintainer block)
         uses: actions/github-script@v6
         with:
           script: |
@@ -25,10 +25,7 @@ jobs:
               const owner = context.repo.owner;
               const repo = context.repo.repo;
               const pr = context.payload.pull_request;
-              if (!pr) {
-                core.info('No pull_request in context; exiting.');
-                return;
-              }
+              if (!pr) { core.info('No pull_request in context; exiting.'); return; }
               const prNumber = pr.number;
               const prAuthor = pr.user.login;
               const actor = context.actor;
@@ -48,66 +45,23 @@ jobs:
                 core.info('.github/PAR_APPROVERS not found or unreadable; treating as empty list.');
               }
 
-              const markerStart = '<!-- MAINTAINER-FIELDS-START -->';
-              const markerEnd = '<!-- MAINTAINER-FIELDS-END -->';
-              const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
-
-              // Prepare maintainer-only fields to inject
-              const maintainerFields = `
-                ${markerStart}
-                **Maintainer-only fields (added by bot)**
-
-                - PAR required: _\\<yes/no\\>_
-                - PAR approver: _\\<approver login\\>_
-                - Bypass requested: _\\<explain\\>_
-  
-                  ${markerEnd}
-                `.trim();
-  
-              // Update PR body if placeholder exists and marker not present
-              const body = pr.body || '';
-              if (!body.includes(markerStart)) {
-                if (body.includes(placeholder)) {
-                  const newBody = body.replace(placeholder, `${placeholder}\n\n${maintainerFields}`);
-                  await github.pulls.update({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    body: newBody
-                  });
-                  core.info('PR body updated with maintainer-only fields.');
-                } else {
-                  // If placeholder missing but marker also missing, append at end (idempotent)
-                  const newBody = `${body}\n\n${maintainerFields}`;
-                  await github.pulls.update({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    body: newBody
-                  });
-                  core.info('PR body appended with maintainer-only fields.');
-                }
-              } else {
-                core.info('Maintainer fields already present; skipping body update.');
-              }
-  
-              // Prepare questionnaires
+              // Prepare questionnaires (comments only)
               const parQuestionnaire = [
                 '### PAR Approval Checklist',
                 '1. Is this change covered by an existing PAR?',
                 '2. If not, has a new PAR been filed and approved?',
                 '3. Approver login:',
                 ''
-              ].join('\n');
-  
+              ].join('\\n');
+
               const bypassQuestionnaire = [
                 '### Bypass PAR Approval Questionnaire',
                 '1. Explain why a PAR approval should be bypassed for this PR.',
                 '2. Risk assessment and mitigation steps:',
                 ''
-              ].join('\n');
-  
-              // Post comments according to actor
+              ].join('\\n');
+
+              // Post comments according to actor; do NOT inject maintainer-only fields into PR body here
               const comments = [];
               if (actor === prAuthor) {
                 comments.push(bypassQuestionnaire);
@@ -117,7 +71,7 @@ jobs:
                 comments.push(parQuestionnaire);
                 comments.push(bypassQuestionnaire);
               }
-  
+
               for (const c of comments) {
                 await github.issues.createComment({
                   owner,
