@@ -21,108 +21,110 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const pr = context.payload.pull_request;
-            if (!pr || !pr.body || !pr.number || !pr.user) {
-              core.info('Incomplete pull_request context; exiting.');
-              return;
-            }
-            const prNumber = pr.number;
-            const prAuthor = pr.user.login;
-            const actor = context.actor;
-
-            // Read approvers file (if present)
-            let approvers = [];
-            try {
-              const resp = await github.repos.getContent({
-                owner,
-                repo,
-                path: '.github/PAR_APPROVERS',
-                ref: context.payload.pull_request.base.ref
-              });
-              const content = Buffer.from(resp.data.content, 'base64').toString();
-              approvers = content.split('\n').map(s => s.trim()).filter(Boolean);
-            } catch (e) {
-              core.info('.github/PAR_APPROVERS not found or unreadable; treating as empty list.');
-            }
-
-            const markerStart = '<!-- MAINTAINER-FIELDS-START -->';
-            const markerEnd = '<!-- MAINTAINER-FIELDS-END -->';
-            const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
-
-            // Prepare maintainer-only fields to inject
-            const maintainerFields = `
-            ${markerStart}
-            **Maintainer-only fields (added by bot)**
-            
-            - PAR required: _\<yes/no\>_
-            - PAR approver: _\<approver login\>_
-            - Bypass requested: _\<explain\>_
-            
-            ${markerEnd}
-            `.trim();
-            
-            // Update PR body if placeholder exists and marker not present
-            const body = pr.body || '';
-            if (!body.includes(markerStart)) {
-              if (body.includes(placeholder)) {
-                const newBody = body.replace(placeholder, `${placeholder}\n\n${maintainerFields}`);
-                await github.pulls.update({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  body: newBody
-                });
-                core.info('PR body updated with maintainer-only fields.');
-              } else {
-                // If placeholder missing but marker also missing, append at end (idempotent)
-                const newBody = `${body}\n\n${maintainerFields}`;
-                await github.pulls.update({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  body: newBody
-                });
-                core.info('PR body appended with maintainer-only fields.');
+            async ({ github, context, core }) => {
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const pr = context.payload.pull_request;
+              if (!pr) {
+                core.info('No pull_request in context; exiting.');
+                return;
               }
-            } else {
-              core.info('Maintainer fields already present; skipping body update.');
-            }
-            
-            // Prepare questionnaires
-            const parQuestionnaire = [
-              '### PAR Approval Checklist',
-              '1. Is this change covered by an existing PAR?',
-              '2. If not, has a new PAR been filed and approved?',
-              '3. Approver login:',
-              ''
-            ].join('\n');
-            
-            const bypassQuestionnaire = [
-              '### Bypass PAR Approval Questionnaire',
-              '1. Explain why a PAR approval should be bypassed for this PR.',
-              '2. Risk assessment and mitigation steps:',
-              ''
-            ].join('\n');
-            
-            // Post comments according to actor
-            const comments = [];
-            if (actor === prAuthor) {
-              comments.push(bypassQuestionnaire);
-            }
-            if (approvers.includes(actor)) {
-              // PAR approver sees both
-              comments.push(parQuestionnaire);
-              comments.push(bypassQuestionnaire);
-            }
-            
-            for (const c of comments) {
-              await github.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: c
-              });
-              core.info('Posted questionnaire comment.');
+              const prNumber = pr.number;
+              const prAuthor = pr.user.login;
+              const actor = context.actor;
+
+              // Read approvers file (if present)
+              let approvers = [];
+              try {
+                const resp = await github.repos.getContent({
+                  owner,
+                  repo,
+                  path: '.github/PAR_APPROVERS',
+                  ref: context.payload.pull_request.base.ref
+                });
+                const content = Buffer.from(resp.data.content, 'base64').toString();
+                approvers = content.split('\n').map(s => s.trim()).filter(Boolean);
+              } catch (e) {
+                core.info('.github/PAR_APPROVERS not found or unreadable; treating as empty list.');
+              }
+
+              const markerStart = '<!-- MAINTAINER-FIELDS-START -->';
+              const markerEnd = '<!-- MAINTAINER-FIELDS-END -->';
+              const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
+
+              // Prepare maintainer-only fields to inject
+              const maintainerFields = `
+              ${markerStart}
+              **Maintainer-only fields (added by bot)**
+              
+              - PAR required: _\\<yes/no\\>_
+              - PAR approver: _\\<approver login\\>_
+              - Bypass requested: _\\<explain\\>_
+              
+              ${markerEnd}
+              `.trim();
+
+              // Update PR body if placeholder exists and marker not present
+              const body = pr.body || '';
+              if (!body.includes(markerStart)) {
+                if (body.includes(placeholder)) {
+                  const newBody = body.replace(placeholder, `${placeholder}\n\n${maintainerFields}`);
+                  await github.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    body: newBody
+                  });
+                  core.info('PR body updated with maintainer-only fields.');
+                } else {
+                  // If placeholder missing but marker also missing, append at end (idempotent)
+                  const newBody = `${body}\n\n${maintainerFields}`;
+                  await github.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    body: newBody
+                  });
+                  core.info('PR body appended with maintainer-only fields.');
+                }
+              } else {
+                core.info('Maintainer fields already present; skipping body update.');
+              }
+
+              // Prepare questionnaires
+              const parQuestionnaire = [
+                '### PAR Approval Checklist',
+                '1. Is this change covered by an existing PAR?',
+                '2. If not, has a new PAR been filed and approved?',
+                '3. Approver login:',
+                ''
+              ].join('\n');
+
+              const bypassQuestionnaire = [
+                '### Bypass PAR Approval Questionnaire',
+                '1. Explain why a PAR approval should be bypassed for this PR.',
+                '2. Risk assessment and mitigation steps:',
+                ''
+              ].join('\n');
+
+              // Post comments according to actor
+              const comments = [];
+              if (actor === prAuthor) {
+                comments.push(bypassQuestionnaire);
+              }
+              if (approvers.includes(actor)) {
+                // PAR approver sees both
+                comments.push(parQuestionnaire);
+                comments.push(bypassQuestionnaire);
+              }
+
+              for (const c of comments) {
+                await github.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: c
+                });
+                core.info('Posted questionnaire comment.');
+              }
             }
