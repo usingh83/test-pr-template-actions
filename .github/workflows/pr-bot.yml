@@ -252,6 +252,17 @@ jobs:
                     return;
                   }
                 }
+              } else {
+                // If neither section has any boxes checked, ensure both sections are present
+                if (!refreshedBody.includes(parSection)) {
+                  refreshedBody = `${refreshedBody}\n\n${parSection}`;
+                }
+                if (bypassSection && !refreshedBody.includes(bypassSection)) {
+                  refreshedBody = `${refreshedBody}\n\n${bypassSection}`;
+                }
+                await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: refreshedBody });
+                core.info('No checklist items selected; ensured both PAR and Bypass sections are present.');
+                return;
               }
 
               // If all PAR checkboxes are checked, update maintainer fields and remove questionnaires
