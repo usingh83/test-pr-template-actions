@@ -328,18 +328,17 @@ jobs:
                   }
                 }
               } else {
-                // Neither PAR nor Bypass has any selections -> ensure both sections are present.
-                // If either section was previously removed, restore the full questionnaire block template.
-                if (qBlockMatch && (!parSectionMatch || !bypassSectionMatch)) {
-                  const restored = refreshedBody.replace(qBlockRegex, questionnaireBlock);
-                  if (restored !== refreshedBody) {
-                    await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: restored });
-                    core.info('No questionnaire options selected — restored both PAR and Bypass questionnaires.');
-                    // When both are unselected the gating check should go to pending again
-                    await setPrCheck('pending');
-                    return;
-                  }
+                // If neither section has any boxes checked, ensure both sections are present
+                if (!refreshedBody.includes(parSection)) {
+                  refreshedBody = `${refreshedBody}\n\n${parSection}`;
                 }
+                if (bypassSection && !refreshedBody.includes(bypassSection)) {
+                  refreshedBody = `${refreshedBody}\n\n${bypassSection}`;
+                }
+                await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: refreshedBody });
+                await setPrCheck('pending');
+                core.info('No checklist items selected; ensured both PAR and Bypass sections are present.');
+                return;
               }
               const satisfied = (total > 0 && checked === total) || (bypassChecked > 0);
               if (satisfied) {
