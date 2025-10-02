@@ -111,20 +111,27 @@ jobs:
                 const maintRegex = new RegExp(`${mStartEsc}[\\s\\S]*?${mEndEsc}\\n?`, 'g');
                 newBody = newBody.replace(maintRegex, '');
 
-                // Reset checkboxes in PAR Approval Checklist to unchecked if questionnaires block present
+                // Reset checkboxes in PAR Approval Checklist if questionnaires block present
                 const qMatch = newBody.match(qBlockRegex);
                 if (qMatch) {
                   let qBlock = qMatch[0];
-                  const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
+                  const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\\s\\S]*?(?=(\\n---|\\n\\n|$))/i);
                   if (parSectionMatch) {
                     const parSection = parSectionMatch[0];
-                    const parReset = parSection.replace(/- \[[ xX]\]/g, '- [ ]');
+                    const parReset = parSection.replace(/- \\[[ xX]\\]/g, '- [ ]');
                     qBlock = qBlock.replace(parSection, parReset);
                     newBody = newBody.replace(qBlockRegex, qBlock);
                   }
+                } else {
+                  // If questionnaires were removed (e.g. after approval), re-insert them so reviewers/author can re-fill
+                  if (body.includes(placeholder)) {
+                    newBody = body.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
+                  } else {
+                    newBody = `${body}\n\n${questionnaireBlock}`;
+                  }
                 }
 
-                // Update PR body only if changes occurred
+                // Update only when something changed
                 if (newBody !== body) {
                   await github.rest.pulls.update({
                     owner,
@@ -132,7 +139,7 @@ jobs:
                     pull_number: prNumber,
                     body: newBody
                   });
-                  core.info('New commit detected: removed maintainer block and reset PAR checkboxes.');
+                  core.info('New commit detected: removed maintainer block, reset PAR checkboxes and ensured questionnaires are present.');
                 } else {
                   core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
                 }
