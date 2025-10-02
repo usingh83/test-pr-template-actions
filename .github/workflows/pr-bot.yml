@@ -84,7 +84,8 @@ jobs:
                 - Approver: _\\<@username\\>_
                 - Approval date: _\\<YYYY-MM-DD\\>_
 
-                _Please do not edit the above fields; they are managed by the bot._${questionnaireBlock}${markerEnd}
+                _Please do not edit the above fields; they are managed by the bot._
+            ${questionnaireBlock}${markerEnd}
               `;
               // Update PR body if placeholder exists and marker not present
               const body = pr.body || '';
