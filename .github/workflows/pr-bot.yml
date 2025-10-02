@@ -51,16 +51,18 @@ jobs:
               const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
               const parQuestionnaire = [
                 '### PAR Approval Checklist',
-                '- [ ] Is this change covered by an existing PAR?',
-                '- [ ] If not, has a new PAR been filed and approved?',
-                '- [ ] Approver login: _\\<approver login\\>_',
+                '- [ ] RMC attestation',
+                '- [ ] ADA attestation',
+                '- [ ] intent attestation',
                 ''
               ].join('\n');
 
               const bypassQuestionnaire = [
                 '### Bypass PAR Approval Questionnaire',
-                '- [ ] Explain why a PAR approval should be bypassed for this PR.',
-                '- [ ] Risk assessment and mitigation steps:',
+                '- [ ] Hotfix - urgent',
+                '- [ ] Low-risk change',
+                '- [ ] Approver judgment',
+                '- [ ] Business requirement',
                 ''
               ].join('\n');
             
