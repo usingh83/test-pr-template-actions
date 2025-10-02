@@ -21,7 +21,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            module.exports = async ({ github, context, core }) => {
+            (async ({ github, context, core }) => {
               const owner = context.repo.owner;
               const repo = context.repo.repo;
               const pr = context.payload.pull_request;
@@ -127,4 +127,4 @@ jobs:
                 });
                 core.info('Posted questionnaire comment.');
               }
-            }
+            })(...);
