@@ -7,6 +7,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  checks: write
 
 jobs:
   update-and-comment:
@@ -33,7 +34,74 @@ jobs:
               }
               const prNumber = prPayload.number;
               const actor = context.actor;
+              const checkName = 'PAR approval or Bypass questionnaire';
+              const headSha = prPayload.head && prPayload.head.sha;
+              
+              async function setPrCheck(desiredState) {
+                // desiredState: 'pending' | 'success'
+                if (!headSha) return;
+                // list existing check runs for the head sha with our name
+                const listResp = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref: headSha,
+                  check_name: checkName,
+                  per_page: 10
+                });
+                const run = (listResp.data.check_runs || [])[0];
+                const now = new Date().toISOString();
 
+                if (desiredState === 'pending') {
+                  if (run) {
+                    // only update if it's completed or not already in_progress
+                    if (run.status !== 'in_progress') {
+                      await github.rest.checks.update({
+                        owner,
+                        repo,
+                        check_run_id: run.id,
+                        status: 'in_progress',
+                        started_at: now
+                      });
+                    }
+                  } else {
+                    await github.rest.checks.create({
+                      owner,
+                      repo,
+                      name: checkName,
+                      head_sha: headSha,
+                      status: 'in_progress',
+                      started_at: now
+                    });
+                  }
+                  return;
+                }
+
+                if (desiredState === 'success') {
+                  if (run) {
+                    if (run.status !== 'completed' || run.conclusion !== 'success') {
+                      await github.rest.checks.update({
+                        owner,
+                        repo,
+                        check_run_id: run.id,
+                        status: 'completed',
+                        conclusion: 'success',
+                        completed_at: now
+                      });
+                    }
+                  } else {
+                    await github.rest.checks.create({
+                      owner,
+                      repo,
+                      name: checkName,
+                      head_sha: headSha,
+                      status: 'completed',
+                      conclusion: 'success',
+                      completed_at: now
+                    });
+                  }
+                  return;
+                }
+              }
               // Optional approvers list
               let approvers = [];
               try {
@@ -268,7 +336,7 @@ jobs:
 
               // If all PAR checkboxes are checked, update maintainer fields and remove questionnaires
               if (total > 0 && checked === total) {
-                const approvalDate = new Date().toISOString().split('T')[0];
+                const approvalDate = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
                 const approverDisplay = approvers.includes(actor) ? `@${actor}` : `@${actor}`;
 
                 const maintainerBlock = [
