@@ -86,9 +86,7 @@ jobs:
 
                 _Please do not edit the above fields; they are managed by the bot._
             
-                ${questionnaireBlock}
-            
-                ${markerEnd}
+                ${questionnaireBlock}${markerEnd}
               `;
               // Update PR body if placeholder exists and marker not present
               const body = pr.body || '';
