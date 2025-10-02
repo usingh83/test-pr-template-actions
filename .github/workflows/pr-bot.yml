@@ -58,7 +58,7 @@ jobs:
 
               // Questionnaire content (checkbox style)
               const parQuestionnaire = [
-                '### PAR Approval Checklist',
+                '### PAR Approval Checklist (all must be checked)',
                 '- [ ] RMC attestation',
                 '- [ ] ADA attestation',
                 '- [ ] intent attestation',
@@ -66,7 +66,7 @@ jobs:
               ].join('\n');
 
               const bypassQuestionnaire = [
-                '### Bypass PAR Approval Questionnaire',
+                '### Bypass PAR Approval Questionnaire (at least one must be checked)',
                 '- [ ] Hotfix - urgent',
                 '- [ ] Low-risk change',
                 '- [ ] Approver judgment',
@@ -129,26 +129,26 @@ jobs:
                   if (!newBody.includes(questionnairesStart)) {
                     if (newBody.includes(placeholder)) {
                       newBody = newBody.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
-                  } else {
-                    newBody = `${newBody}\n\n${questionnaireBlock}`;
+                    } else {
+                      newBody = `${newBody}\n\n${questionnaireBlock}`;
+                    }
                   }
                 }
-              }
 
-              // Update only when something changed
-              if (newBody !== body) {
-                await github.rest.pulls.update({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  body: newBody
-                });
-                core.info('New commit detected: removed maintainer block, reset PAR checkboxes and ensured questionnaires are present.');
-              } else {
-                core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
+                // Update only when something changed
+                if (newBody !== body) {
+                  await github.rest.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    body: newBody
+                  });
+                  core.info('New commit detected: removed maintainer block, reset PAR checkboxes and ensured questionnaires are present.');
+                } else {
+                  core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
+                }
+                return;
               }
-              return;
-            }
 
               // Ensure questionnaires exist (inject on opened or if missing)
               if (!body.includes(questionnairesStart) && !body.includes(maintainerStart)) {
@@ -201,7 +201,11 @@ jobs:
               }
               const parSection = parSectionMatch[0];
 
-              // Count checkboxes
+              // Find Bypass section within questionnaire block
+              const bypassSectionMatch = qBlock.match(/### Bypass PAR Approval Questionnaire[\s\S]*?(?=(\n---|\n\n|$))/i);
+              const bypassSection = bypassSectionMatch ? bypassSectionMatch[0] : '';
+
+              // Count checkboxes in PAR section
               const checkboxRegex = /- \[([ xX])\]\s.*$/gm;
               let total = 0;
               let checked = 0;
@@ -211,7 +215,46 @@ jobs:
                 if (m[1].trim().toLowerCase() === 'x') checked += 1;
               }
 
-              // If all checked, update maintainer fields and remove questionnaires
+              // Count checked boxes in Bypass section
+              let bypassTotal = 0;
+              let bypassChecked = 0;
+              if (bypassSection) {
+                checkboxRegex.lastIndex = 0;
+                while ((m = checkboxRegex.exec(bypassSection)) !== null) {
+                  bypassTotal += 1;
+                  if (m[1].trim().toLowerCase() === 'x') bypassChecked += 1;
+                }
+              }
+
+              // Enforce section-level mutual exclusion based on partial selections:
+              // - If any PAR checkbox is selected, remove the Bypass section until all PAR boxes are unselected.
+              // - Else if any Bypass checkbox is selected, remove the PAR section until all Bypass boxes are unselected.
+              if (checked > 0) {
+                // remove bypass section if present
+                if (bypassSectionMatch) {
+                  let updated = refreshedBody.replace(bypassSectionMatch[0], '');
+                  // remove leftover '---' separator if it remained alone
+                  updated = updated.replace(/\n---\n/, '\n');
+                  if (updated !== refreshedBody) {
+                    await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
+                    core.info('PAR items selected — removed Bypass questionnaire until PAR boxes are cleared.');
+                    return;
+                  }
+                }
+              } else if (bypassChecked > 0) {
+                // remove par section if present
+                if (parSectionMatch) {
+                  let updated = refreshedBody.replace(parSectionMatch[0], '');
+                  updated = updated.replace(/\n---\n/, '\n');
+                  if (updated !== refreshedBody) {
+                    await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
+                    core.info('Bypass item(s) selected — removed PAR questionnaire until Bypass boxes are cleared.');
+                    return;
+                  }
+                }
+              }
+
+              // If all PAR checkboxes are checked, update maintainer fields and remove questionnaires
               if (total > 0 && checked === total) {
                 const approvalDate = new Date().toISOString().split('T')[0];
                 const approverDisplay = approvers.includes(actor) ? `@${actor}` : `@${actor}`;
