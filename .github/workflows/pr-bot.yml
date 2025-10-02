@@ -218,6 +218,7 @@ jobs:
                 }
                 return;
               }
+              await setPrCheck('pending');
 
               // Ensure questionnaires exist (inject on opened or if missing)
               if (!body.includes(questionnairesStart) && !body.includes(maintainerStart)) {
@@ -332,6 +333,12 @@ jobs:
                     return;
                   }
                 }
+              }
+              const satisfied = (total > 0 && checked === total) || (bypassChecked > 0);
+              if (satisfied) {
+                await setPrCheck('success');
+              } else {
+                await setPrCheck('pending');
               }
 
               // If all PAR checkboxes are checked, update maintainer fields and remove questionnaires
