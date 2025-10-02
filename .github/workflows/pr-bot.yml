@@ -265,11 +265,11 @@ jobs:
 
               // Find PAR Approval Checklist section within questionnaire block
               const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
+              const parSection = parSectionMatch ? parSectionMatch[0] : '';
               if (!parSectionMatch) {
                 core.info('No PAR Approval Checklist found inside questionnaires.');
                 return;
               }
-              const parSection = parSectionMatch[0];
 
               // Find Bypass section within questionnaire block
               const bypassSectionMatch = qBlock.match(/### Bypass PAR Approval Questionnaire[\s\S]*?(?=(\n---|\n\n|$))/i);
