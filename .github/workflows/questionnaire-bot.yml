@@ -1,0 +1,77 @@
+name: Questionnaire Bot
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  post-questionnaire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine Role and Post Questionnaire
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const approvers = ["alice", "bob", "carol"]; // <-- list of allowed PAR approvers
+            const prAuthor = context.payload.pull_request.user.login;
+            const issue_number = context.issue.number;
+
+            let body = "";
+            if (approvers.includes(prAuthor)) {
+              body = `
+### PAR Approval Questionnaire ✅
+PAR approvers, please answer by commenting in JSON format:
+
+  \`\`\`json
+  {
+    "readyForApproval": true,
+    "understandRisks": true,
+    "rollbackPlan": "Yes, defined"
+  }
+  \`\`\`
+
+---
+
+### Bypass PAR Approval Questionnaire ⚠️
+PAR approver or PR Author may answer by commenting:
+
+  \`\`\`json
+  {
+    "bypassApproval": true,
+    "reason": "Explain why bypass is needed"
+  }
+  \`\`\`
+  `;
+  } else {
+  body = `
+### Bypass PAR Approval Questionnaire ⚠️
+As the PR Author, you may answer by commenting:
+
+  \`\`\`json
+  {
+    "bypassApproval": true,
+    "reason": "Explain why bypass is needed"
+  }
+  \`\`\`
+  `;
+  }
+
+  await github.rest.issues.createComment({
+owner: context.repo.owner,
+repo: context.repo.repo,
+  issue_number,
+  body
+});
+  
+  // Create an initial "waiting" check
+  await github.rest.checks.create({
+owner: context.repo.owner,
+repo: context.repo.repo,
+name: "Questionnaire Check / Questionnaire Approval",
+head_sha: context.payload.pull_request.head.sha,
+status: "in_progress",
+output: {
+  title: "Waiting for Questionnaire",
+  summary: "Please fill out the approval or bypass questionnaire."
+}
+});

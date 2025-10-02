@@ -1,0 +1,97 @@
+name: Questionnaire Handler
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  process-response:
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse Response
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const approvers = ["alice", "bob", "carol"];
+            const commenter = context.payload.comment.user.login;
+            const commentBody = context.payload.comment.body.trim();
+            let parsed;
+
+            try {
+              parsed = JSON.parse(commentBody);
+            } catch (e) {
+              core.setOutput("valid", "false");
+              return;
+            }
+
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            const prAuthor = pr.data.user.login;
+
+            // Check if commenter is allowed
+            const isApprover = approvers.includes(commenter);
+            const isAuthor = commenter === prAuthor;
+
+            if (parsed.readyForApproval !== undefined && isApprover) {
+              core.setOutput("valid", "true");
+              core.setOutput("mode", "approve");
+              core.setOutput("json", JSON.stringify(parsed));
+            } else if (parsed.bypassApproval !== undefined && (isApprover || isAuthor)) {
+              core.setOutput("valid", "true");
+              core.setOutput("mode", "bypass");
+              core.setOutput("json", JSON.stringify(parsed));
+            } else {
+              core.setOutput("valid", "false");
+            }
+
+      - name: Update Checks & Post JSON
+        if: steps.parse.outputs.valid == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mode = "${{ steps.parse.outputs.mode }}";
+            const json = ${{ steps.parse.outputs.json }};
+            const head_sha = context.payload.issue.pull_request.head.sha;
+
+            // Post JSON back to PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### Questionnaire Response Processed ✅\n\n\`\`\`json\n${json}\n\`\`\``
+            });
+
+            // Mark Questionnaire Approval check as succeeded
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "Questionnaire Check / Questionnaire Approval",
+              head_sha,
+              status: "completed",
+              conclusion: "success",
+              output: {
+                title: "Questionnaire Approved",
+                summary: "A valid questionnaire has been submitted."
+              }
+            });
+
+            // Create second check based on mode
+            let newCheckName = mode === "approve" ? "PAR Deployment - Approved" : "PAR Deployment - Bypassed";
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: newCheckName,
+              head_sha,
+              status: "completed",
+              conclusion: "success",
+              output: {
+                title: newCheckName,
+                summary: "Deployment allowed via questionnaire."
+              }
+            });
