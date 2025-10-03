@@ -37,71 +37,6 @@ jobs:
               const checkName = 'PAR approval or Bypass questionnaire';
               const headSha = prPayload.head && prPayload.head.sha;
               
-              async function setPrCheck(desiredState) {
-                // desiredState: 'pending' | 'success'
-                if (!headSha) return;
-                // list existing check runs for the head sha with our name
-                const listResp = await github.rest.checks.listForRef({
-                  owner,
-                  repo,
-                  ref: headSha,
-                  check_name: checkName,
-                  per_page: 10
-                });
-                const run = (listResp.data.check_runs || [])[0];
-                const now = new Date().toISOString();
-
-                if (desiredState === 'pending') {
-                  if (run) {
-                    // only update if it's completed or not already in_progress
-                    if (run.status !== 'in_progress') {
-                      await github.rest.checks.update({
-                        owner,
-                        repo,
-                        check_run_id: run.id,
-                        status: 'in_progress',
-                        started_at: now
-                      });
-                    }
-                  } else {
-                    await github.rest.checks.create({
-                      owner,
-                      repo,
-                      name: checkName,
-                      head_sha: headSha,
-                      status: 'in_progress',
-                      started_at: now
-                    });
-                  }
-                  return;
-                }
-
-                if (desiredState === 'success') {
-                  if (run) {
-                    if (run.status !== 'completed' || run.conclusion !== 'success') {
-                      await github.rest.checks.update({
-                        owner,
-                        repo,
-                        check_run_id: run.id,
-                        status: 'completed',
-                        conclusion: 'success',
-                        completed_at: now
-                      });
-                    }
-                  } else {
-                    await github.rest.checks.create({
-                      owner,
-                      repo,
-                      name: checkName,
-                      head_sha: headSha,
-                      status: 'completed',
-                      conclusion: 'success',
-                      completed_at: now
-                    });
-                  }
-                  return;
-                }
-              }
               // Optional approvers list
               let approvers = [];
               try {
@@ -216,10 +151,8 @@ jobs:
                 } else {
                   core.info('New commit detected but no maintainer block or PAR checkboxes to reset.');
                 }
-                await setPrCheck('pending');
                 return;
               }
-              await setPrCheck('pending');
 
               // Ensure questionnaires exist (inject on opened or if missing)
               if (!body.includes(questionnairesStart) && !body.includes(maintainerStart)) {
@@ -295,12 +228,6 @@ jobs:
                   if (m[1].trim().toLowerCase() === 'x') bypassChecked += 1;
                 }
               }
-              const satisfied = (total > 0 && checked === total) || (bypassChecked > 0);
-              if (satisfied) {
-                await setPrCheck('success');
-              } else {
-                await setPrCheck('pending');
-              }
 
               // Enforce section-level mutual exclusion based on partial selections:
               // - If any PAR checkbox is selected, remove the Bypass section until all PAR boxes are unselected.
@@ -313,7 +240,6 @@ jobs:
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('PAR items selected — removed Bypass questionnaire until PAR boxes are cleared.');
-                    await setPrCheck('pending');
                     return;
                   }
                 }
@@ -325,7 +251,6 @@ jobs:
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('Bypass item(s) selected — removed PAR questionnaire until Bypass boxes are cleared.');
-                    await setPrCheck('pending');
                     return;
                   }
                 }
@@ -335,7 +260,6 @@ jobs:
                   const restored = refreshedBody.replace(qBlockRegex, questionnaireBlock);
                   if (restored !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: restored });
-                    await setPrCheck('pending');
                     core.info('No questionnaire options selected — restored both PAR and Bypass questionnaires.');
                     return;
                   }
@@ -349,7 +273,6 @@ jobs:
                   }
                   if (inserted !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: inserted });
-                    await setPrCheck('pending');
                     core.info('No questionnaire options selected and block missing — inserted full questionnaire block.');
                     return;
                   }
