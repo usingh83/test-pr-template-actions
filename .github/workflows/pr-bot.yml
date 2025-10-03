@@ -124,7 +124,9 @@ jobs:
               const questionnairesStart = '<!-- QUESTIONNAIRES-START -->';
               const questionnairesEnd = '<!-- QUESTIONNAIRES-END -->';
               const placeholder = '<!-- Maintainer-only fields will be added automatically -->';
-
+              const sectionEndLookahead = `(?=(\\n---|\\n\\n|${esc(questionnairesEnd)}|$))`;
+              // Make separator removal tolerant (optional surrounding newlines, multiple dashes)
+              const removeSeparator = s => s.replace(/\n?---+\n?/, '\n');
               // Questionnaire content (checkbox style)
               const parQuestionnaire = [
                 '### PAR Approval Checklist (all must be checked)',
@@ -265,14 +267,14 @@ jobs:
               const qBlock = qBlockMatch[0];
 
               // Find PAR Approval Checklist section within questionnaire block
-              const parSectionMatch = qBlock.match(/### PAR Approval Checklist[\s\S]*?(?=(\n---|\n\n|$))/i);
+              const parSectionMatch = qBlock.match(new RegExp(`###\\s*PAR\\s+Approval\\s+Checklist[\\s\\S]*?${sectionEndLookahead}`, 'i'));
               const parSection = parSectionMatch ? parSectionMatch[0] : '';
               if (!parSectionMatch) {
                 core.info('No PAR Approval Checklist found inside questionnaires.');
               }
 
               // Find Bypass section within questionnaire block
-              const bypassSectionMatch = qBlock.match(/### Bypass PAR Approval Questionnaire[\s\S]*?(?=(\n---|\n\n|$))/i);
+              const bypassSectionMatch = qBlock.match(new RegExp(`###\\s*Bypass\\s+PAR\\s+Approval\\s+Questionnaire[\\s\\S]*?${sectionEndLookahead}`, 'i'));
               const bypassSection = bypassSectionMatch ? bypassSectionMatch[0] : '';
 
               // Count checkboxes in PAR section
@@ -280,6 +282,7 @@ jobs:
               let total = 0;
               let checked = 0;
               let m;
+              checkboxRegex.lastIndex = 0;
               while ((m = checkboxRegex.exec(parSection)) !== null) {
                 total += 1;
                 if (m[1].trim().toLowerCase() === 'x') checked += 1;
@@ -300,44 +303,39 @@ jobs:
               // - If any PAR checkbox is selected, remove the Bypass section until all PAR boxes are unselected.
               // - Else if any Bypass checkbox is selected, remove the PAR section until all Bypass boxes are unselected.
               if (checked > 0) {
-                // remove bypass section if present
                 if (bypassSectionMatch) {
                   let updated = refreshedBody.replace(bypassSectionMatch[0], '');
-                  updated = updated.replace(/\n---\n/, '\n');
+                  updated = removeSeparator(updated);
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('PAR items selected — removed Bypass questionnaire until PAR boxes are cleared.');
-                    // ensure the PR check remains pending while PAR boxes are selected
                     await setPrCheck('pending');
                     return;
                   }
                 }
               } else if (bypassChecked > 0) {
-                // remove par section if present
                 if (parSectionMatch) {
                   let updated = refreshedBody.replace(parSectionMatch[0], '');
-                  updated = updated.replace(/\n---\n/, '\n');
+                  updated = removeSeparator(updated);
                   if (updated !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: updated });
                     core.info('Bypass item(s) selected — removed PAR questionnaire until Bypass boxes are cleared.');
-                    // ensure the PR check remains pending while Bypass boxes are selected (state may still require action)
                     await setPrCheck('pending');
                     return;
                   }
                 }
               } else {
-                // Neither PAR nor Bypass has any selections -> restore both sections if missing
+                // restore both sections if either was removed
                 if (qBlockMatch && (!parSectionMatch || !bypassSectionMatch)) {
                   const restored = refreshedBody.replace(qBlockRegex, questionnaireBlock);
                   if (restored !== refreshedBody) {
                     await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: restored });
                     core.info('No questionnaire options selected — restored both PAR and Bypass questionnaires.');
-                    // When both are unselected the gating check should go to pending again
                     await setPrCheck('pending');
                     return;
                   }
                 } else if (!qBlockMatch) {
-                  // questionnaire block previously removed; insert it
+                  // insert full block if missing (unchanged logic)
                   let inserted = refreshedBody;
                   if (inserted.includes(placeholder)) {
                     inserted = inserted.replace(placeholder, `${placeholder}\n\n${questionnaireBlock}`);
