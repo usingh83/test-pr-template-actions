@@ -117,7 +117,8 @@ jobs:
               } catch (e) {
                 core.info('.github/PAR_APPROVERS not found or unreadable; treating as empty list.');
               }
-
+              // Helper: escape regex special chars
+              const esc = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               // Markers
               const maintainerStart = '<!-- MAINTAINER-FIELDS-START -->';
               const maintainerEnd = '<!-- MAINTAINER-FIELDS-END -->';
@@ -156,9 +157,6 @@ jobs:
                 questionnairesEnd,
                 ''
               ].join('\n');
-
-              // Helper: escape regex special chars
-              const esc = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
               // Fetch latest PR body
               const { data: prData } = await github.rest.pulls.get({
